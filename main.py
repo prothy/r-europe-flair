@@ -5,7 +5,7 @@ from cairosvg import svg2png
 import xmltodict
 from time import time, sleep
 
-query_string = """
+_query_string = """
 SELECT ?label ?code ?flag WHERE {
   ?item wdt:P300 ?code;
         wdt:P41 ?flag;
@@ -13,9 +13,20 @@ SELECT ?label ?code ?flag WHERE {
   ?item rdfs:label ?label FILTER (lang(?label) = "en").
 } ORDER BY ?code
 """
+query_string="""
+SELECT ?item ?itemLabel ?code ?flag WHERE {
+  ?item wdt:P297 ?code;
+        wdt:P41 ?flag.
+  MINUS {
+    ?item wdt:P31 wd:Q3024240 .
+  }
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],en". }
+} ORDER BY ?itemLabel
+"""
+
 url = "https://query.wikidata.org/sparql"
 
-SUBREDDIT = "europedev"
+SUBREDDIT = "asklatinamerica"
 
 
 def fetch_data() -> list:
@@ -69,11 +80,26 @@ def post_s3_result_to_reddit(file_name: str, s3_key: str) -> None:
         url=f"https://oauth.reddit.com/api/v1/{SUBREDDIT}/emoji.json",
         headers=headers,
         data={
-            'name': file_name.lower(),
+            'name': f'flag-{file_name.lower()}',
             's3_key': s3_key,
             'user_flair_allowed': 'true',
             'post_flair_allowed': 'true',
             'mod_flair': 'false'
+        }
+    )
+
+
+def upload_flairs_to_reddit(code: str, label: str):
+    requests.post(
+        url=f"https://oauth.reddit.com/r/{SUBREDDIT}/api/flairtemplate_v2",
+        headers=headers,
+        data={
+            'allowable_content': 'all',
+            'api_type': 'json',
+            'background_color': 'none',
+            'text': f':flag-{code.lower()}: {label}',
+            'text_color': '',
+            'text_editable': 'false'
         }
     )
 
@@ -85,19 +111,21 @@ length = len(results)
 
 print("Uploading emojis to reddit...")
 
-for result in results[:20]:
+for result in results:
     t1 = time()
     svg_url = result['flag']['value']
 
-    png_image = svg2png(url=svg_url, output_width=64)
+    # png_image = svg2png(url=svg_url, output_width=72, output_height=72)
 
-    s3_lease = get_s3_lease(result)
+    # s3_lease = get_s3_lease(result)
 
-    s3_upload_response = post_file_to_s3(png_image, s3_lease)
+    # s3_upload_response = post_file_to_s3(png_image, s3_lease)
 
-    s3_key = s3_upload_response['PostResponse']['Key']
+    # s3_key = s3_upload_response['PostResponse']['Key']
 
-    post_s3_result_to_reddit(result['code']['value'], s3_key)
+    # post_s3_result_to_reddit(result['code']['value'], s3_key)
+
+    upload_flairs_to_reddit(result['code']['value'], result['itemLabel']['value'])
 
     print(f"{index}/{length} -- {result['code']['value']}")
 
